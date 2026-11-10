@@ -1,6 +1,6 @@
 ---
 name: preflight
-description: Shared prerequisite check used by every Takt laptop skill before it does any work. Also use when the user runs /takt:preflight to check whether their machine and the current repo are ready for Takt.
+description: Shared prerequisite check used by every Takt skill before it does any work. Also use when the user runs /takt:preflight to check whether their machine and the current repo are ready for Takt.
 ---
 
 # Takt preflight
@@ -14,8 +14,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/preflight.sh" <check> [<check> ...]
 If the user ran `/takt:preflight` directly, run every check:
 `node openspec gh git github-remote openspec-init takt-init`.
 
-If the repo has a Takt config that pins an OpenSpec version, pass it as
-`TAKT_OPENSPEC_VERSION=<x.y.z>` in front of the command.
+The `openspec-init` check also compares the installed OpenSpec CLI with the version that generated the repo's OpenSpec skills (OpenSpec's own `generatedBy` stamp). Takt keeps no version pin of its own.
 
 ## Reading the result
 
@@ -51,5 +50,6 @@ Never run an install command yourself from preflight. If the calling skill is `/
 | `takt:setup` | `node openspec gh git github-remote` |
 | `takt:explore` | `node openspec git openspec-init` |
 | `takt:backlog` | `gh git github-remote takt-init` |
+| `takt:propose` | `node openspec gh git github-remote openspec-init takt-init` |
+| `takt:code` | `node openspec gh git github-remote openspec-init takt-init` |
 | `takt:status` | `gh git github-remote takt-init` |
-| `takt:upgrade` | `gh git github-remote takt-init` |

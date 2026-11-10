@@ -1,6 +1,6 @@
 # Takt
 
-Takt is a personal software factory: a Claude Code plugin plus a reusable GitHub workflow that turns GitHub issues into OpenSpec specs and then code, headless.
+Takt is a personal software factory: a Claude Code plugin that turns GitHub issues into OpenSpec specs and then code. For now every stage runs interactively in Claude Code on the laptop; unattended runs on GitHub Actions come later.
 
 **Read `docs/design.md` before any work in this repo.** It is the source of truth for the lifecycle, labels, skills and architecture. If a change you're making contradicts it, stop and say so; update the design doc first, then the code.
 
@@ -10,7 +10,6 @@ Takt is a personal software factory: a Claude Code plugin plus a reusable GitHub
 - `.claude-plugin/marketplace.json` — this repo is also its own marketplace; the plugin source is the repo root
 - `skills/<name>/SKILL.md` — one folder per skill
 - `scripts/` — shell helpers skills call via `${CLAUDE_PLUGIN_ROOT}/scripts/…` (e.g. `preflight.sh`)
-- `.github/workflows/factory.yml` — the reusable workflow projects call (added in build step 3)
 - `docs/design.md` — the design
 
 Only manifests go inside `.claude-plugin/`. Skills, agents, commands and hooks live at the repo root.
@@ -18,12 +17,12 @@ Only manifests go inside `.claude-plugin/`. Skills, agents, commands and hooks l
 ## Rules
 
 - **Depend on OpenSpec, never copy it.** Takt skills call OpenSpec's CLI and commands and add conventions on top. Don't vendor OpenSpec prompts or skills into this repo.
-- **Headless-safe skills.** `takt:propose` and `takt:code` run in GitHub Actions with no human present. They must never ask questions interactively; ambiguity goes into an "Open questions" section and an issue comment.
+- **Interactive now, unattended-ready later.** Skills may ask the user questions. But each stage reads its input from GitHub (the issue, the PR and its comments), not from earlier chat, and writes every decision that matters into the issue, spec or PR. Never let a decision live only in the conversation.
 - **No secrets in this repo.** It's public. Tokens and keys live in each project's secrets. No real repo names, tokens or internal URLs in examples or fixtures.
-- **Every laptop skill runs preflight first.** Use `scripts/preflight.sh` with the checks listed in `skills/preflight/SKILL.md`; on failure, stop and return the actionable message that skill describes. Never install anything silently.
+- **Every skill runs preflight first.** Use `scripts/preflight.sh` with the checks listed in `skills/preflight/SKILL.md`; on failure, stop and return the actionable message that skill describes. Never install anything silently.
 - **Labels are always prefixed `takt:`.**
 - **Idempotent setup.** Running any setup step twice must never break a repo.
-- **Bump `version` in `plugin.json`** on any change to skills that projects depend on, and tag releases (`v1`, `v1.1.0`, …) for the reusable workflow.
+- **Bump `version` in `plugin.json`** on any change to skills or scripts.
 
 ## Validate before committing
 

@@ -1,7 +1,7 @@
 {
   "name": "takt",
-  "description": "Personal software factory: write a change, label it, and Takt specs and builds it with OpenSpec and Claude Code on GitHub Actions.",
-  "version": "0.2.0",
+  "description": "Personal software factory: explore a change, and Takt specs and builds it with OpenSpec and Claude Code, issue to PR.",
+  "version": "0.3.0",
   "author": {
     "name": "Carlos Sousa"
   },

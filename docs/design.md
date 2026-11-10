@@ -1,98 +1,116 @@
 # Takt — Design
 
-Takt is a personal software factory for solo projects. A human defines *what* to build and approves at gates; the factory writes the spec and the code, headless, on GitHub Actions.
+Takt is a personal software factory for solo projects. A human defines *what* to build and approves at gates; Takt writes the spec and the code.
+
+**For now, everything runs interactively in Claude Code on the laptop**, with the human present. Running unattended on GitHub Actions comes later (see [Later: unattended mode](#later-unattended-mode)). The records Takt keeps (issues, labels, branches, PRs) are shaped so that switching to unattended only changes *what starts each step*, not what the step does.
 
 Built on:
 - **OpenSpec** — the spec engine (specs, changes, propose/apply/archive)
-- **Claude Code** — the worker, interactive on the laptop and headless in CI
-- **GitHub** — issues, labels, PRs, Actions (the conveyor belt and the record)
+- **Claude Code** — the worker, in an interactive session on the laptop
+- **GitHub** — issues, labels and PRs (the conveyor belt and the record)
 
 ## Principles
 
-1. **Never interactive in production.** The only interactive work is thinking: exploring an idea and writing a change. Everything after the issue runs headless.
-2. **Humans decide, the factory reports.** Humans trigger each stage. The factory only moves labels to show state.
+1. **Interactive first, unattended later.** Every stage runs in a Claude Code session with the human present. Each stage's input and output live on GitHub, never only in the chat, so a later unattended mode can run the same stages.
+2. **Humans decide, Takt reports.** The human starts each stage and approves at the gates. Labels only show state.
 3. **Specs live in the repo.** `openspec/specs/` is the living truth; `openspec/changes/<id>-<slug>/` holds proposed changes until archived.
-4. **Depend on OpenSpec, don't copy it.** Takt skills orchestrate OpenSpec's own commands and add factory conventions on top.
+4. **Depend on OpenSpec, don't copy it.** Takt skills orchestrate OpenSpec's own commands and add conventions on top.
 5. **Fix the factory, not just the product.** When something goes wrong, ask what rule, hook or test would have caught it, and add it to Takt.
-6. **No ambiguity guessing.** In headless mode, Claude never fills gaps with assumptions. It writes an "Open questions" section and surfaces it for review.
+6. **No silent assumptions.** Claude never fills gaps with guesses. It asks the human, and records the answer in the issue, spec or PR. Anything still unresolved goes in an "Open questions" section.
 
 ## Architecture
 
-### Three layers
+### Where things live
 
 | Where | What |
 |---|---|
-| **Your machine** | OpenSpec CLI (npm), Takt plugin installed globally (user scope), `gh` authenticated |
-| **takt repo** | Takt skills (Claude Code plugin + its own marketplace) and the reusable GitHub workflow `factory.yml`. No copy of OpenSpec. |
-| **Each project repo** | `openspec/` (specs + changes), OpenSpec's commands (from `openspec init`), a thin caller workflow, a small Takt config file |
+| **Your machine** | OpenSpec CLI (npm), Takt plugin installed globally (user scope), `gh` signed in |
+| **takt repo** | Takt skills and scripts (Claude Code plugin + its own marketplace). No copy of OpenSpec. |
+| **Each project repo** | `openspec/` (specs + changes), OpenSpec's skills and commands (from `openspec init`), `.takt.yml`, the `takt:` labels |
 
-### How workflows run
+### The Takt config (`.takt.yml`)
 
-- GitHub only triggers workflows in the repo where the event happens, so each project has one thin caller workflow that declares *when* to run.
-- The caller uses a **reusable workflow** from the takt repo (`uses: <owner>/takt/.github/workflows/factory.yml@vN`), which declares *what* to run.
-- The reusable workflow **executes inside the project repo**, with the project's token, secrets and code. The takt repo gets no access to any project. Projects trust Takt's code, so they pin it to a version tag.
+One small file at the project root, written by `takt:setup` and editable by hand. Running setup again keeps your edits. For now it holds only the project's **checks**: the commands that prove a change works (tests, lint, typecheck, build).
 
-### Factory identity
+```yaml
+checks:
+  - name: web
+    paths: [apps/web/**]
+    run: pnpm --filter web test
+  - name: web-lint
+    paths: [apps/web/**]
+    run: pnpm --filter web lint
+  - name: api
+    paths: [services/api/**]
+    run: cd services/api && pytest
+```
 
-The default `GITHUB_TOKEN` does not trigger other workflows (CI won't run on PRs it opens; labels it adds won't wake the factory). Takt uses its own **GitHub App** identity, installed on *selected repositories only*.
+- **Scoped by paths,** so a monorepo with several languages and test suites works. `takt:code` runs every check whose `paths` overlap the files the change touches. A simple repo has one or a few checks with `paths: ["**"]`.
+- **Detected, then confirmed.** `takt:setup` proposes checks from what it finds (`package.json` scripts, `pyproject.toml`, `go.mod`, `Makefile`, …) and asks you only where detection fails or is ambiguous.
+- **Read by the skills,** not by `preflight.sh`, so the shell scripts never parse YAML.
+- **No OpenSpec version in it.** See below.
+
+Spec *rules* (e.g. "every scenario maps to a test") don't go here; they go in `openspec/config.yaml` (`rules`, `operations`), which OpenSpec reads itself. Takt doesn't add its own keys to that file, since it belongs to OpenSpec.
 
 ### Versioning
 
-- Projects pin Takt with `@vN`. Upgrading is deliberate (`takt:upgrade`).
-- The OpenSpec version is pinned in the project's Takt config, so local and CI runs agree on formats.
+- The plugin's `version` in `plugin.json` is bumped on every skill or script change; you update with `claude plugin marketplace update takt` and `claude plugin update takt@takt`.
+- **OpenSpec has no Takt pin.** OpenSpec stamps every skill it installs with the CLI version that generated it (`generatedBy` in `.claude/skills/openspec-*/SKILL.md`), and `openspec update` regenerates them for the installed CLI. Preflight's `openspec-init` check compares the two: CLI newer → run `openspec update` and commit; CLI older → install the stamped version.
 
 ## Labels
 
-All labels are prefixed `takt:` to avoid colliding with labels existing repos already use.
+All labels are prefixed `takt:` to avoid colliding with labels existing repos already use. Skills set them; they show state, they don't trigger anything (yet).
 
 | Label | Meaning | Set by |
 |---|---|---|
 | *(none)* | Backlog: a well-formed change, not started | `takt:backlog` |
 | `takt:inbox` | Raw input (e.g. customer bug), not yet a proper change | intake |
-| `takt:propose` | "Propose this" | **human only** |
-| `takt:proposing` | Propose running | factory |
-| `takt:proposed` | Spec PR open, awaiting review | factory |
-| `takt:building` | Apply running | factory |
-| `takt:built` | Code PR open, awaiting review | factory |
-| `takt:failed` | A run failed; log linked in an issue comment | factory |
+| `takt:proposing` | Propose in progress | `takt:propose` |
+| `takt:proposed` | Spec PR open, awaiting review | `takt:propose` |
+| `takt:building` | Code in progress | `takt:code` |
+| `takt:built` | Code PR open, awaiting review | `takt:code` |
+| `takt:failed` | A stage stopped without finishing; reason in an issue comment | any stage |
 
-The `takt:propose` label triggers the skill of the same name. It is honored only when added by the repo owner. This is both control and a security boundary (no one else can make the factory run on their text).
+`takt:propose` is reserved for unattended mode, where adding it will start the stage.
 
 ## Lifecycle
 
-| # | Trigger | Who | What runs | Label after |
-|---|---|---|---|---|
-| 0 | `takt:setup` in a repo (once) | human | Onboards the repo | — |
-| 1 | Run `takt:explore` | human | Discuss the idea (local, interactive; runs OpenSpec's explore) | — |
-| 2 | Run `takt:backlog` | human | Distills the session into a change and creates the issue | *(none)*: backlog |
-| 3 | Add the `takt:propose` label | **human** | Action starts the `takt:propose` skill | `takt:proposing` |
-| 4 | Propose finishes | factory | Spec PR opened | `takt:proposed` |
-| 5 | Comment `@claude …` on the spec PR | human | Claude revises the spec on the same PR | `takt:proposed` |
-| 6 | **Merge the spec PR** | **human** | Action starts the `takt:code` skill | `takt:building` |
-| 7 | Coding finishes | factory | Implemented + archived, code PR opened; CI runs | `takt:built` |
-| 8 | Comment `@claude …` on the code PR | human | Claude fixes on the same PR | `takt:built` |
-| 9 | **Merge the code PR** | **human** | Issue closed, living specs updated | closed |
+| # | You run / do | What happens | Label after |
+|---|---|---|---|
+| 0 | `/takt:setup` (once per repo) | Onboards the repo | — |
+| 1 | `/takt:explore` | Discuss the idea (runs OpenSpec's explore) | — |
+| 2 | `/takt:backlog` | Distills the session into a change and creates the issue | *(none)*: backlog |
+| 3 | `/takt:propose 42` | Writes the OpenSpec change for issue #42, opens the spec PR | `takt:proposed` |
+| 4 | Review the spec PR; run `/takt:propose 42` again to revise | Revises the spec on the same PR, using your PR comments | `takt:proposed` |
+| 5 | **Merge the spec PR** | Approves the spec | `takt:proposed` |
+| 6 | `/takt:code 42` | Implements, verifies, archives the change, opens the code PR | `takt:built` |
+| 7 | Review the code PR; run `/takt:code 42` again to revise | Fixes on the same PR, using your PR comments | `takt:built` |
+| 8 | **Merge the code PR** | Issue closed, living specs updated | closed |
 
-Human decisions: rows 3, 6, 9 (start it, approve the spec, accept the code). Rows 5 and 8 are optional revision loops.
+Human decisions: rows 3, 5, 6, 8 (start it, approve the spec, start the build, accept the code). Rows 4 and 7 are optional revision loops.
+
+Guards:
+- `takt:code` refuses to start until the spec PR for that issue is merged.
+- Running a stage again on the same issue always continues its existing branch and PR; it never opens a second one.
 
 ### Exits
 
 - **Reject a spec:** close the spec PR → labels removed, issue returns to backlog.
-- **Reject the code:** close the code PR → issue returns to `takt:proposed`; the approved spec stays on `main`, so coding can be re-triggered without re-specifying.
-- **Failure:** the run sets `takt:failed` and comments the log link on the issue. Retry by re-adding the `takt:propose` label (or re-running `takt:code`).
+- **Reject the code:** close the code PR → issue returns to `takt:proposed`; the approved spec stays on `main`, so `/takt:code 42` can run again without re-specifying.
+- **Stopped:** if a stage can't finish (e.g. tests stay red), it sets `takt:failed` and comments why on the issue. Running the stage again resumes it.
 
 ### Notes
 
-- No queue or WIP limit: what runs is controlled by labels and by the human.
-- If two changes build in parallel, both code PRs start from the same `main`; after merging one, comment `@claude rebase onto main` on the other.
+- No queue or WIP limit: the human decides what runs.
+- If two changes build in parallel, both code PRs start from the same `main`; after merging one, rebase the other (`/takt:code 43` again).
 
 ## Naming and traceability
 
-One ID follows a change everywhere: issue `#42` → change folder `openspec/changes/42-dark-theme/` → branches and both PRs reference `#42`.
+One ID follows a change everywhere: issue `#42` → change folder `openspec/changes/42-dark-theme/` → branches `takt/42-spec` and `takt/42-code` → both PRs reference `#42`.
 
 ## The change (issue body)
 
-A change is the output of an explore session. It must be **self-contained**: the headless run never sees the explore conversation.
+A change is the output of an explore session. It must be **self-contained**: the propose stage reads only the issue, not the explore conversation (which may be a different session, and in unattended mode won't exist at all).
 
 Sections:
 - **Problem / why** — what's wrong or missing today
@@ -105,25 +123,26 @@ Sections:
 
 ## Skills
 
-| Skill | Runs | Purpose |
-|---|---|---|
-| `takt:setup` | laptop | Onboard a new or existing repo |
-| `takt:preflight` | laptop | Check machine and repo prerequisites; used by every laptop skill |
-| `takt:explore` | laptop | Discuss an idea; runs OpenSpec's explore with Takt context |
-| `takt:backlog` | laptop | Add the explored change to the backlog (creates the issue) |
-| `takt:status` | laptop | Show the factory floor (issues by label) |
-| `takt:upgrade` | laptop | Bump a repo to a newer Takt version |
-| `takt:propose` | Actions | Issue → spec PR (wraps OpenSpec propose) |
-| `takt:code` | Actions | Approved change → code PR, plus archive (wraps OpenSpec apply + archive) |
+All skills run in Claude Code on the laptop.
 
-Laptop skills wrap OpenSpec where one exists (`takt:explore` → OpenSpec explore). Actions skills wrap OpenSpec propose, apply and archive.
+| Skill | Purpose |
+|---|---|
+| `takt:setup` | Onboard a new or existing repo |
+| `takt:preflight` | Check machine and repo prerequisites; used by every skill |
+| `takt:explore` | Discuss an idea; runs OpenSpec's explore with Takt context |
+| `takt:backlog` | Add the explored change to the backlog (creates the issue) |
+| `takt:propose <issue>` | Issue → spec PR (wraps OpenSpec propose) |
+| `takt:code <issue>` | Merged spec → code PR, plus archive (wraps OpenSpec apply + archive) |
+| `takt:status` | Show the factory floor (issues by label) |
+
+Each skill wraps the matching OpenSpec skill where one exists, and adds the Takt conventions: the issue as input, the naming, the labels, branches and PRs, and verification. OpenSpec's skills may ask questions; with the human present, they are answered in the session, and the answers that matter are written into the spec or PR.
 
 ## Prerequisites and preflight
 
-Plugins can't install npm packages, so a laptop can have Takt without OpenSpec, Node or a signed-in `gh`. Every laptop skill therefore starts with a **preflight** and stops before doing any work if something is missing. GitHub Actions is unaffected: the workflow installs its own OpenSpec at the pinned version on every run.
+Plugins can't install npm packages, so a laptop can have Takt without OpenSpec, Node or a signed-in `gh`. Every skill therefore starts with a **preflight** and stops before doing any work if something is missing.
 
 - **One script, shared:** `scripts/preflight.sh <check>...` runs every requested check (never stopping at the first), and prints `OK|…` or `FAIL|<problem>|<why>|<fix>` per check plus a summary line. Exit 0 on pass, 1 on any failure. Portable to macOS's default bash.
-- **Checks:** `node` (≥ 20.19.0), `openspec` (installed; matches the repo's pinned version when `TAKT_OPENSPEC_VERSION` is set), `gh` (installed and signed in), `git` (inside a repo), `github-remote` (origin is on GitHub), `openspec-init` (`openspec/` exists), `takt-init` (Takt labels exist).
+- **Checks:** `node` (≥ 20.19.0), `openspec` (installed), `gh` (installed and signed in), `git` (inside a repo), `github-remote` (origin is on GitHub), `openspec-init` (`openspec/` exists, and the CLI matches the repo's `generatedBy` stamp), `takt-init` (Takt labels exist).
 - **A useful failure, always:** the skill replies with what it was about to do, then for each failure *what's missing*, *why Takt needs it* and *the exact fix command*, then what's already fine, then "run `/takt:<skill>` again". Fixes are OS-aware (Homebrew on macOS when available).
 - **No silent installs:** preflight never installs anything. Only `takt:setup` may offer to run a fix command, and only after the user says yes.
 - **`/takt:preflight`** runs every check on demand.
@@ -133,20 +152,20 @@ Plugins can't install npm packages, so a laptop can have Takt without OpenSpec, 
 | `takt:setup` | `node openspec gh git github-remote` |
 | `takt:explore` | `node openspec git openspec-init` |
 | `takt:backlog` | `gh git github-remote takt-init` |
+| `takt:propose` | `node openspec gh git github-remote openspec-init takt-init` |
+| `takt:code` | `node openspec gh git github-remote openspec-init takt-init` |
 | `takt:status` | `gh git github-remote takt-init` |
-| `takt:upgrade` | `gh git github-remote takt-init` |
 
 ### `takt:setup` (onboarding a repo)
 
 Idempotent; delivers its changes as a PR ("takt: onboard").
 1. Preflight (`node openspec gh git github-remote`); offer to run the fix commands, only with the user's yes
-2. `openspec init` for Claude Code (non-interactive), or `openspec update` if `openspec/` exists
+2. `openspec init --tools claude` (non-interactive), or `openspec update` if `openspec/` exists
 3. Create the `takt:` labels
-4. Add the thin caller workflow (pinned to a Takt version) and the change issue template
-5. Detect test/lint/build commands and write the Takt config; ask only where detection fails
-6. Set the Claude token secret (prompted, piped straight to `gh secret set`, never written to disk); check the Takt GitHub App and Claude GitHub app are installed on this repo
-7. Branch protection on `main`
-8. Readiness check: no usable tests/CI → file "establish a test harness" as the first change
+4. Add the change issue template
+5. Detect the project's checks (tests, lint, typecheck, build, per path) and write `.takt.yml`; ask only where detection fails or is ambiguous
+6. Optionally, branch protection on `main`
+7. Readiness check: no usable tests → file "establish a test harness" as the first change
 
 ### Existing (brownfield) repos
 
@@ -157,17 +176,27 @@ Idempotent; delivers its changes as a PR ("takt: onboard").
 ## Verification
 
 - Every spec scenario (Given/When/Then) maps to a test.
-- CI runs tests, lint, typecheck and `openspec validate`.
+- **While working,** `takt:code` runs the `.takt.yml` checks whose paths match the changed files, plus `openspec validate`, until they pass.
+- **Before calling it done,** if the repo has CI, `takt:code` waits for the PR's checks (`gh pr checks --watch`); CI is the final gate. Without CI, the local checks are the gate. A CI failure the local checks missed means `.takt.yml` needs a check added (fix the factory).
 - A reviewer subagent checks the diff against the spec.
 - Claude may not declare `takt:code` done while tests are red.
 
 ## Build order
 
-1. Design doc + plugin skeleton (this repo, installable, `takt:hello`) — plus the shared preflight
+1. Design doc + plugin skeleton (this repo, installable, `takt:hello`) — plus the shared preflight ✅
 2. Sandbox repo (`takt-sandbox`) set up manually; record every step
-3. Label → spec PR: `factory.yml` (propose job), caller workflow, `takt:propose`, GitHub App identity
-4. `takt:explore` and `takt:backlog`
-5. Code + archive: spec PR merge → code PR
-6. Revision loops (`@claude`) and `takt:failed`
-7. `takt:setup` (codify the manual sandbox notes)
-8. `takt:status`, `takt:upgrade`
+3. `takt:explore` and `takt:backlog`
+4. `takt:propose`: issue → spec PR, including revision
+5. `takt:code`: merged spec → code PR + archive, including revision
+6. `takt:setup` (codify the manual sandbox notes) and `takt:status`
+7. Later: unattended mode
+
+## Later: unattended mode
+
+Not built yet. Kept here so today's choices don't block it.
+
+- **Trigger:** adding the `takt:propose` label (repo owner only) and merging a spec PR start the stages on GitHub Actions instead of the human running them.
+- **Workflows:** each project has a thin caller workflow declaring *when* to run; it uses a reusable workflow from the takt repo (`uses: <owner>/takt/.github/workflows/factory.yml@vN`) declaring *what* to run. The reusable workflow runs inside the project repo, with the project's token and secrets; the takt repo gets no access to any project. Projects pin it to a version tag (`takt:upgrade` bumps it).
+- **Identity:** the default `GITHUB_TOKEN` doesn't trigger other workflows, so Takt would use its own GitHub App, installed on selected repositories only.
+- **No one to ask:** OpenSpec's skills ask for confirmation (e.g. archiving with incomplete tasks). Unattended, the Takt skills must pass the change name explicitly, answer those confirmations with fixed rules (incomplete tasks → `takt:failed`, ambiguity → "Open questions"), and the workflow must check the result mechanically (change folder exists, `openspec validate` passes, tests green) so a run that stopped to ask a question shows up as a failure instead of a silent success.
+- **Revision loops:** `@claude` comments on the spec or code PR.
