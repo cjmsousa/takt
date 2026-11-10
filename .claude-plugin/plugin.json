@@ -1,0 +1,10 @@
+{
+  "name": "takt",
+  "description": "Personal software factory: write a change, label it, and Takt specs and builds it with OpenSpec and Claude Code on GitHub Actions.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Carlos Sousa"
+  },
+  "license": "MIT",
+  "keywords": ["openspec", "spec-driven-development", "github-actions", "software-factory"]
+}

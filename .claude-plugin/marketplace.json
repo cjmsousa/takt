@@ -1,0 +1,14 @@
+{
+  "name": "takt",
+  "description": "Takt, a personal software factory",
+  "owner": {
+    "name": "Carlos Sousa"
+  },
+  "plugins": [
+    {
+      "name": "takt",
+      "source": "./",
+      "description": "Spec-driven software factory on OpenSpec, Claude Code and GitHub Actions"
+    }
+  ]
+}
