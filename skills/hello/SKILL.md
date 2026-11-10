@@ -5,12 +5,14 @@ description: Smoke test for the Takt plugin. Use only when the user runs /takt:h
 
 Confirm that the Takt plugin is installed and loaded.
 
-Reply with exactly:
+1. Reply with: "Takt is installed. Plugin root: ${CLAUDE_PLUGIN_ROOT}"
+2. Run the machine-level preflight, following the `takt:preflight` skill:
 
-"Takt is installed. Plugin root: ${CLAUDE_PLUGIN_ROOT}"
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/preflight.sh" node openspec gh
+   ```
 
-Then, in one line each, report:
-- whether the `openspec` CLI is available (run `openspec --version`)
-- whether `gh` is authenticated (run `gh auth status`)
+3. If every check passes, show the OK lines as a short checklist and say: "This machine is ready for Takt."
+4. If any check fails, present the failures exactly as the `takt:preflight` skill describes, and end with: "Once that's done, run `/takt:hello` again."
 
 Do nothing else.

@@ -108,6 +108,7 @@ Sections:
 | Skill | Runs | Purpose |
 |---|---|---|
 | `takt:setup` | laptop | Onboard a new or existing repo |
+| `takt:preflight` | laptop | Check machine and repo prerequisites; used by every laptop skill |
 | `takt:explore` | laptop | Discuss an idea; runs OpenSpec's explore with Takt context |
 | `takt:backlog` | laptop | Add the explored change to the backlog (creates the issue) |
 | `takt:status` | laptop | Show the factory floor (issues by label) |
@@ -117,10 +118,28 @@ Sections:
 
 Laptop skills wrap OpenSpec where one exists (`takt:explore` → OpenSpec explore). Actions skills wrap OpenSpec propose, apply and archive.
 
+## Prerequisites and preflight
+
+Plugins can't install npm packages, so a laptop can have Takt without OpenSpec, Node or a signed-in `gh`. Every laptop skill therefore starts with a **preflight** and stops before doing any work if something is missing. GitHub Actions is unaffected: the workflow installs its own OpenSpec at the pinned version on every run.
+
+- **One script, shared:** `scripts/preflight.sh <check>...` runs every requested check (never stopping at the first), and prints `OK|…` or `FAIL|<problem>|<why>|<fix>` per check plus a summary line. Exit 0 on pass, 1 on any failure. Portable to macOS's default bash.
+- **Checks:** `node` (≥ 20.19.0), `openspec` (installed; matches the repo's pinned version when `TAKT_OPENSPEC_VERSION` is set), `gh` (installed and signed in), `git` (inside a repo), `github-remote` (origin is on GitHub), `openspec-init` (`openspec/` exists), `takt-init` (Takt labels exist).
+- **A useful failure, always:** the skill replies with what it was about to do, then for each failure *what's missing*, *why Takt needs it* and *the exact fix command*, then what's already fine, then "run `/takt:<skill>` again". Fixes are OS-aware (Homebrew on macOS when available).
+- **No silent installs:** preflight never installs anything. Only `takt:setup` may offer to run a fix command, and only after the user says yes.
+- **`/takt:preflight`** runs every check on demand.
+
+| Skill | Checks |
+|---|---|
+| `takt:setup` | `node openspec gh git github-remote` |
+| `takt:explore` | `node openspec git openspec-init` |
+| `takt:backlog` | `gh git github-remote takt-init` |
+| `takt:status` | `gh git github-remote takt-init` |
+| `takt:upgrade` | `gh git github-remote takt-init` |
+
 ### `takt:setup` (onboarding a repo)
 
 Idempotent; delivers its changes as a PR ("takt: onboard").
-1. Check prerequisites: `gh auth status`, Node, OpenSpec at the pinned version
+1. Preflight (`node openspec gh git github-remote`); offer to run the fix commands, only with the user's yes
 2. `openspec init` for Claude Code (non-interactive), or `openspec update` if `openspec/` exists
 3. Create the `takt:` labels
 4. Add the thin caller workflow (pinned to a Takt version) and the change issue template
@@ -144,7 +163,7 @@ Idempotent; delivers its changes as a PR ("takt: onboard").
 
 ## Build order
 
-1. Design doc + plugin skeleton (this repo, installable, `takt:hello`)
+1. Design doc + plugin skeleton (this repo, installable, `takt:hello`) — plus the shared preflight
 2. Sandbox repo (`takt-sandbox`) set up manually; record every step
 3. Label → spec PR: `factory.yml` (propose job), caller workflow, `takt:propose`, GitHub App identity
 4. `takt:explore` and `takt:backlog`
