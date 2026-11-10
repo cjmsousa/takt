@@ -1,7 +1,7 @@
 {
   "name": "takt",
   "description": "Personal software factory: explore a change, and Takt specs and builds it with OpenSpec and Claude Code, issue to PR.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": {
     "name": "Carlos Sousa"
   },

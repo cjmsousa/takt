@@ -158,14 +158,17 @@ Plugins can't install npm packages, so a laptop can have Takt without OpenSpec, 
 
 ### `takt:setup` (onboarding a repo)
 
-Idempotent; delivers its changes as a PR ("takt: onboard").
+Idempotent: running it again on an onboarded repo changes nothing, and on a half-onboarded repo finishes the job. File changes arrive as one PR ("takt: onboard") on branch `takt/onboard`; labels are created directly on GitHub (they aren't files).
 1. Preflight (`node openspec gh git github-remote`); offer to run the fix commands, only with the user's yes
-2. `openspec init --tools claude` (non-interactive), or `openspec update` if `openspec/` exists
-3. Create the `takt:` labels
-4. Add the change issue template
-5. Detect the project's checks (tests, lint, typecheck, build, per path) and write `.takt.yml`; ask only where detection fails or is ambiguous
-6. Optionally, branch protection on `main`
-7. Readiness check: no usable tests → file "establish a test harness" as the first change
+2. Start clean: working tree must be clean; branch `takt/onboard` from the up-to-date default branch
+3. `openspec init --tools claude --no-animation`, or `openspec update` if `openspec/` exists
+4. Create the `takt:` labels (`scripts/labels.sh`, safe to rerun)
+5. Add the change issue template (`templates/takt-change.md` → `.github/ISSUE_TEMPLATE/takt-change.md`); never overwrite an edited one without asking
+6. Detect the project's checks (tests, lint, typecheck, build, per path) and write `.takt.yml`; existing CI workflows are the best source. Confirm with the user; keep an existing `.takt.yml` and only offer additions
+7. If anything changed: commit, push, open or update the "takt: onboard" PR. If nothing changed: say the repo is already onboarded
+8. Readiness check: no check that runs tests → offer to file "establish a test harness" as the first change
+
+Branch protection is left to the user for now.
 
 ### Existing (brownfield) repos
 
@@ -184,11 +187,11 @@ Idempotent; delivers its changes as a PR ("takt: onboard").
 ## Build order
 
 1. Design doc + plugin skeleton (this repo, installable, `takt:hello`) — plus the shared preflight ✅
-2. Sandbox repo (`takt-sandbox`) set up manually; record every step
+2. `takt:setup`, iterated against a throwaway repo until it works (rerunning it is the test)
 3. `takt:explore` and `takt:backlog`
 4. `takt:propose`: issue → spec PR, including revision
 5. `takt:code`: merged spec → code PR + archive, including revision
-6. `takt:setup` (codify the manual sandbox notes) and `takt:status`
+6. `takt:status`
 7. Later: unattended mode
 
 ## Later: unattended mode

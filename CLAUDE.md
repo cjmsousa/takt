@@ -10,6 +10,7 @@ Takt is a personal software factory: a Claude Code plugin that turns GitHub issu
 - `.claude-plugin/marketplace.json` — this repo is also its own marketplace; the plugin source is the repo root
 - `skills/<name>/SKILL.md` — one folder per skill
 - `scripts/` — shell helpers skills call via `${CLAUDE_PLUGIN_ROOT}/scripts/…` (e.g. `preflight.sh`)
+- `templates/` — files skills copy into project repos (e.g. the change issue template)
 - `docs/design.md` — the design
 
 Only manifests go inside `.claude-plugin/`. Skills, agents, commands and hooks live at the repo root.
